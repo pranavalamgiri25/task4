@@ -1,0 +1,164 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "5ca4895c-03d5-41cb-a374-feb6c9e3b0b7",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      " * Serving Flask app '__main__'\n",
+      " * Debug mode: on\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.\n",
+      " * Running on http://127.0.0.1:5000\n",
+      "Press CTRL+C to quit\n",
+      " * Restarting with watchdog (windowsapi)\n"
+     ]
+    },
+    {
+     "ename": "SystemExit",
+     "evalue": "1",
+     "output_type": "error",
+     "traceback": [
+      "An exception has occurred, use %tb to see the full traceback.\n",
+      "\u001b[1;31mSystemExit\u001b[0m\u001b[1;31m:\u001b[0m 1\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "C:\\Users\\Prana\\.jupyter\\netflix\\Lib\\site-packages\\IPython\\core\\interactiveshell.py:3585: UserWarning: To exit: use 'exit', 'quit', or Ctrl-D.\n",
+      "  warn(\"To exit: use 'exit', 'quit', or Ctrl-D.\", stacklevel=1)\n"
+     ]
+    }
+   ],
+   "source": [
+    "import sqlite3\n",
+    "import re\n",
+    "from flask import Flask, request, jsonify, session\n",
+    "import bcrypt\n",
+    "\n",
+    "app = Flask(__name__)\n",
+    "app.secret_key = \"replace_with_a_secure_random_key\"\n",
+    "\n",
+    "# Database setup\n",
+    "def init_db():\n",
+    "    with sqlite3.connect(\"users.db\") as conn:\n",
+    "        cursor = conn.cursor()\n",
+    "        cursor.execute('''\n",
+    "            CREATE TABLE IF NOT EXISTS users (\n",
+    "                id INTEGER PRIMARY KEY AUTOINCREMENT,\n",
+    "                username TEXT UNIQUE NOT NULL,\n",
+    "                password_hash BLOB NOT NULL\n",
+    "            )\n",
+    "        ''')\n",
+    "        conn.commit()\n",
+    "\n",
+    "init_db()\n",
+    "\n",
+    "# Input validation helper\n",
+    "def is_valid_username(username):\n",
+    "    return bool(re.match(r'^[a-zA-Z0-9_]{3,20}$', username))\n",
+    "\n",
+    "# 1. User Registration\n",
+    "@app.route('/register', methods=['POST'])\n",
+    "def register():\n",
+    "    data = request.get_json() or {}\n",
+    "    username = data.get('username', '').strip()\n",
+    "    password = data.get('password', '')\n",
+    "\n",
+    "    if not is_valid_username(username) or len(password) < 6:\n",
+    "        return jsonify({\"error\": \"Invalid username (3-20 alphanumeric chars) or password too short (min 6 chars)\"}), 400\n",
+    "\n",
+    "    # Hash password with bcrypt\n",
+    "    salt = bcrypt.gensalt()\n",
+    "    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)\n",
+    "\n",
+    "    try:\n",
+    "        with sqlite3.connect(\"users.db\") as conn:\n",
+    "            cursor = conn.cursor()\n",
+    "            # Parameterized query protects against SQL Injection\n",
+    "            cursor.execute(\"INSERT INTO users (username, password_hash) VALUES (?, ?)\", (username, hashed))\n",
+    "            conn.commit()\n",
+    "        return jsonify({\"message\": \"Registration successful\"}), 201\n",
+    "    except sqlite3.IntegrityError:\n",
+    "        return jsonify({\"error\": \"Username already exists\"}), 409\n",
+    "\n",
+    "# 2. User Login\n",
+    "@app.route('/login', methods=['POST'])\n",
+    "def login():\n",
+    "    data = request.get_json() or {}\n",
+    "    username = data.get('username', '').strip()\n",
+    "    password = data.get('password', '')\n",
+    "\n",
+    "    with sqlite3.connect(\"users.db\") as conn:\n",
+    "        cursor = conn.cursor()\n",
+    "        # Parameterized query protects against SQL Injection\n",
+    "        cursor.execute(\"SELECT password_hash FROM users WHERE username = ?\", (username,))\n",
+    "        row = cursor.fetchone()\n",
+    "\n",
+    "    if row and bcrypt.checkpw(password.encode('utf-8'), row[0]):\n",
+    "        session['user'] = username  # Start session\n",
+    "        return jsonify({\"message\": f\"Welcome, {username}! Login successful.\"}), 200\n",
+    "\n",
+    "    return jsonify({\"error\": \"Invalid username or password\"}), 401\n",
+    "\n",
+    "# 3. Protected Dashboard Route\n",
+    "@app.route('/dashboard', methods=['GET'])\n",
+    "def dashboard():\n",
+    "    if 'user' in session:\n",
+    "        return jsonify({\"message\": f\"Hello {session['user']}, you have accessed protected data.\"}), 200\n",
+    "    return jsonify({\"error\": \"Unauthorized. Please log in first.\"}), 401\n",
+    "\n",
+    "# 4. Logout (Session Management)\n",
+    "@app.route('/logout', methods=['POST'])\n",
+    "def logout():\n",
+    "    session.pop('user', None)  # Invalidate session\n",
+    "    return jsonify({\"message\": \"Successfully logged out\"}), 200\n",
+    "\n",
+    "if __name__ == '__main__':\n",
+    "    app.run(debug=True)\n",
+    "    "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "462e906f-1042-4258-95ee-c2a083b73ae9",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python [conda env:netflix]",
+   "language": "python",
+   "name": "conda-env-netflix-py"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.7"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
